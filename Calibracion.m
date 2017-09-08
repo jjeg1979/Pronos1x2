@@ -164,7 +164,7 @@ outWin = tie;
 quiniela = cell( size( Jornada, 1 ), 1 );
 relleno = { '1', 'X', '2' };
 
-for partido = 1 : size( Jornada, 1 )
+for partido = 1 : size( Jornada, 1 ) - 1
     % Find probabilities for both teams
     localTeam = strfind( cellstr( Probabilidades.Properties.RowNames ), Jornada{ partido, 1 } );
     localTeam = find( not( cellfun( 'isempty', localTeam ) ) );
@@ -186,6 +186,33 @@ for partido = 1 : size( Jornada, 1 )
 end % for partido = 1 : size( Jornada, 1 )
 %% Table with all forecast
 Pronosticos = table( homeWin, tie, outWin, quiniela, 'RowNames', enfrentamientos, 'VariableNames', Variables );
+
+%% Pleno al 15 MonteCarlo Simulation
+% Establish number of simulations and get local's and away's teams names
+campos = fieldnames( Resultados );
+numberOfSims = 100000;
+local = Jornada{ end, 1 };
+visitante = Jornada{ end, 2 };
+% Determine if which category they belong to (check only needed for one team)
+campo = find( [ not( isempty( find( contains( cellstr( Estadisticas.( campos{ 1 } ).Equipo ), local ), 1 ) ) ), ...
+    not( isempty( find( contains( cellstr( Estadisticas.( campos{ 2 } ).Equipo ), local ), 1 ) ) ) ] > 0 );
+% Get Goals scored at home and conceded at home by local team
+ScoredHome   = mean( Resultados.( campos{ campo } ).GolesLocal( contains( cellstr( Resultados.( campos{ campo } ).Locales ), local ) ) );
+ConcededHome = mean( Resultados.( campos{ campo } ).GolesVisitante( contains( cellstr( Resultados.( campos{ campo } ).Locales ), local ) ) );
+% Get Goals scored and conceded away by away team
+ScoredAway   = mean( Resultados.( campos{ campo } ).GolesVisitante( contains( cellstr( Resultados.( campos{ campo } ).Visitantes ), visitante ) ) );
+ConcededAway = mean( Resultados.( campos{ campo } ).GolesLocal( contains( cellstr( Resultados.( campos{ campo } ).Visitantes ), visitante ) ) );
+% Metrics for Poisson Estimation
+lambdaLocal = 0.5 * ( ScoredHome + ConcededAway );
+lambdaVisitante = 0.5 * ( ScoredAway + ConcededHome );
+% Simulations
+SimLocal     = poissrnd( lambdaLocal, numberOfSims, 1 );
+SimVisitante = poissrnd( lambdaVisitante, numberOfSims, 1 );
+Simulaciones = strcat( num2str( SimLocal ), '-', num2str( SimVisitante ) );
+% Fill up P15
+Pronosticos.Quiniela{ end } = mode( Simulaciones );
+writetable( Pronosticos, 'Pronostico.xlsx' );
+
 
 %% Margin of victory model
 % Import data
@@ -261,7 +288,7 @@ for campo = 1 : numel( campos )
         Partidos.( campos{ campo } ).GolesVisitante;
     % Predicted Margin Of Victory
     % TODO: Vectorize next portion of code
-    for partido = 1 : numel( Partidos.( campos{ campo } ).Fecha )
+    for partido = 1 : numel( Partidos.( campos{ campo } ).Fecha ) 
         % homeRating
         homeRating = GolesTotales.( campos{ campo } ).ZeroRating( contains( cellstr( GolesTotales.( campos{ campo } ).Equipos ), ...
             cellstr( Partidos.( campos{ campo } ).Local( partido ) ) ) );     
@@ -284,4 +311,5 @@ for campo = 1 : numel( campos )
         cellstr( GolesTotales.( campos{ campo } ).Equipos ), 'VariableNames', { 'Ratings' } );
 end % for campo = 1 : numel( campos )
 
-clearvars -except Pronosticos Estadisticas Partidos GolesTotales MOV
+%% Cleaning up
+clearvars -except Pronosticos Estadisticas Partidos GolesTotales Resultados MOV
